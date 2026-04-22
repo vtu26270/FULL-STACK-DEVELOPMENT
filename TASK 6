@@ -1,0 +1,93 @@
+-- 1. Database (optional)
+CREATE DATABASE IF NOT EXISTS audit_demo;
+USE audit_demo;
+
+----------------------------------------------------
+-- 2. MAIN TABLE TO MONITOR  (example: students)
+----------------------------------------------------
+CREATE TABLE IF NOT EXISTS students (
+    student_id INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
+    email      VARCHAR(100),
+    department VARCHAR(50),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                 ON UPDATE CURRENT_TIMESTAMP
+);
+
+----------------------------------------------------
+-- 3. LOG TABLE  (stores every INSERT / UPDATE)
+----------------------------------------------------
+CREATE TABLE IF NOT EXISTS student_audit_log (
+    log_id      INT AUTO_INCREMENT PRIMARY KEY,
+    student_id  INT,
+    action      VARCHAR(10),          -- 'INSERT' or 'UPDATE'
+    old_name    VARCHAR(100),
+    new_name    VARCHAR(100),
+    old_email   VARCHAR(100),
+    new_email   VARCHAR(100),
+    old_dept    VARCHAR(50),
+    new_dept    VARCHAR(50),
+    changed_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+----------------------------------------------------
+-- 4. TRIGGER FOR INSERT
+----------------------------------------------------
+DELIMITER $$
+
+CREATE TRIGGER trg_students_insert
+AFTER INSERT ON students
+FOR EACH ROW
+BEGIN
+    INSERT INTO student_audit_log
+        (student_id, action,
+         old_name, new_name,
+         old_email, new_email,
+         old_dept, new_dept,
+         changed_at)
+    VALUES
+        (NEW.student_id, 'INSERT',
+         NULL, NEW.name,
+         NULL, NEW.email,
+         NULL, NEW.department,
+         NOW());
+END$$
+
+----------------------------------------------------
+-- 5. TRIGGER FOR UPDATE
+----------------------------------------------------
+CREATE TRIGGER trg_students_update
+AFTER UPDATE ON students
+FOR EACH ROW
+BEGIN
+    INSERT INTO student_audit_log
+        (student_id, action,
+         old_name, new_name,
+         old_email, new_email,
+         old_dept, new_dept,
+         changed_at)
+    VALUES
+        (NEW.student_id, 'UPDATE',
+         OLD.name, NEW.name,
+         OLD.email, NEW.email,
+         OLD.department, NEW.department,
+         NOW());
+END$$
+
+DELIMITER ;
+
+----------------------------------------------------
+-- 6. VIEW FOR DAILY ACTIVITY REPORT
+----------------------------------------------------
+CREATE OR REPLACE VIEW vw_student_daily_activity AS
+SELECT
+    DATE(changed_at)        AS activity_date,
+    COUNT(*)                AS total_changes,
+    SUM(action = 'INSERT')  AS insert_count,
+    SUM(action = 'UPDATE')  AS update_count
+FROM student_audit_log
+GROUP BY DATE(changed_at)
+ORDER BY activity_date;
+
+-- Use this to see the daily report:
+-- SELECT * FROM vw_student_daily_activity;
